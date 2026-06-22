@@ -23,11 +23,12 @@ public class SokoBot {
 
     List<int[]> targetList = new ArrayList<>();
 
+    // parse static map elements into walls and targets arrays
     for (int r = 0; r < height; r++)
       for (int c = 0; c < width; c++) {
-        if (mapData[r][c] == '#')
+        if (mapData[r][c] == '#') // mark wall cells
           walls[r][c] = true;
-        if (mapData[r][c] == '.') {
+        if (mapData[r][c] == '.') { // mark target cells
           targets[r][c] = true;
           targetList.add(new int[]{r,c});
         }
@@ -39,29 +40,31 @@ public class SokoBot {
     int playerR = -1, playerC = -1;
     List<long[]> initBoxes = new ArrayList<>();
 
+    // parse moving elements to find the player and box starting positions
     for (int r = 0; r < height; r++)
       for (int c = 0; c < width; c++) {
-        if (itemsData[r][c] == '@') {
+        if (itemsData[r][c] == '@') { // found the player
           playerR = r;
           playerC = c;
         }
-        if (itemsData[r][c] == '$')
+        if (itemsData[r][c] == '$') // found a box, record its position
           initBoxes.add(new long[]{r,c});
       }
 
     long[] boxArr = new long[initBoxes.size()];
 
-    for (int i = 0; i < initBoxes.size(); i++)
+    for (int i = 0; i < initBoxes.size(); i++) // pack box positions into a single long array
       boxArr[i] = pack(initBoxes.get(i)[0], initBoxes.get(i)[1]);
 
+    // sort boxes for consistent state hashing, then run A*
     Arrays.sort(boxArr);
     State initial = new State(playerR, playerC, boxArr, "");
     String result = astar(initial, walls, targets, targetList, deadCells, height, width);
 
-    if (result == null) {
-      return "";
-    } else {
-      return result;
+    if (result == null) { // no solution found...
+      return ""; // ...return empty string
+    } else { // solution found...
+      return result; // ...return the move sequence
     }
   }
 
@@ -80,65 +83,68 @@ public class SokoBot {
   private String astar(State initial, boolean[][] walls, boolean[][] targets,
                        List<int[]> targetList, boolean[][] deadCells, int height, int width) {
 
+    // open list: states to explore, ordered by f (lowest first)
     PriorityQueue<State> open = new PriorityQueue<>(Comparator.comparingInt(s -> s.f));
     Map<Long, Integer> visited = new HashMap<>();
 
+    // initialize the starting state and add it to the open list
     initial.g = 0;
     initial.h = heuristic(initial.boxes, targetList);
     initial.f = initial.h;
     open.add(initial);
 
+    // direction vectors: up, down, left, right
     int[] dr = {-1, 1, 0, 0};
     int[] dc = {0, 0, -1, 1};
     char[] dirChar = {'u','d','l','r'};
 
-    while (!open.isEmpty()) {
-      State cur = open.poll();
+    while (!open.isEmpty()) { // keep exploring until no states are left
+      State cur = open.poll(); // pick the most promising state (lowest f)
 
-      // goal check
+      // goal check: if all boxes are in target cells already...
       if (isGoal(cur.boxes, targets))
-        return cur.path;
+        return cur.path; // ...return the current path as the solution
 
       long hash = stateHash(cur);
       Integer best = visited.get(hash);
 
-      if (best != null && best <= cur.g)
+      if (best != null && best <= cur.g) // skip if already visited this state with a better or equal cost
         continue;
 
       visited.put(hash, cur.g);
 
-      // expand
-      for (int d = 0; d < 4; d++) {
+      // expand: try all four directions
+      for (int d = 0; d < 4; d++) { // generate a neighbor state for each direction
         int nr = cur.playerR + dr[d];
         int nc = cur.playerC + dc[d];
 
-        if (nr < 0 || nr >= height || nc < 0 || nc >= width)
+        if (nr < 0 || nr >= height || nc < 0 || nc >= width) // skip if out of bounds
           continue;
-        if (walls[nr][nc])
+        if (walls[nr][nc]) // skip if the next cell is a wall
           continue;
 
         int boxIdx = findBox(cur.boxes, nr, nc);
         long[] newBoxes = cur.boxes;
 
-        if (boxIdx >= 0) {
+        if (boxIdx >= 0) { // next cell has a box, attempt to push it
           // push a box
           int br = nr + dr[d];
           int bc = nc + dc[d];
 
-          if (br < 0 || br >= height || bc < 0 || bc >= width)
+          if (br < 0 || br >= height || bc < 0 || bc >= width) // skip if box destination is out of bounds
             continue;
-          if (walls[br][bc])
+          if (walls[br][bc]) // skip if box destination is a wall
             continue;
-          if (findBox(cur.boxes, br, bc) >= 0)
+          if (findBox(cur.boxes, br, bc) >= 0) // skip if another box is already at the destination
             continue;
-          if (deadCells[br][bc] && !targets[br][bc])
+          if (deadCells[br][bc] && !targets[br][bc]) // skip if box destination is a dead cell
             continue;
 
           newBoxes = cur.boxes.clone();
           newBoxes[boxIdx] = pack(br, bc);
           Arrays.sort(newBoxes);
 
-          if (isFrozenDeadlock(newBoxes, walls, targets, br, bc, height, width))
+          if (isFrozenDeadlock(newBoxes, walls, targets, br, bc, height, width)) // skip if push causes a deadlock
             continue;
         }
 
@@ -151,10 +157,10 @@ public class SokoBot {
         long nextHash = stateHash(next);
         Integer nextBest = visited.get(nextHash);
 
-        if (nextBest != null && nextBest <= newG)
+        if (nextBest != null && nextBest <= newG) // skip if already found a better or equal path to this state
           continue;
 
-        open.add(next);
+        open.add(next); // add neighbor to open list for future exploration
       }
     }
     return null; // if the program exits the while-loop, there is no solution
@@ -162,7 +168,7 @@ public class SokoBot {
 
   /**
    * heuristic
-   * estimates remaining cost as the sum of each box's Manhattan distance to its nearest target.
+   * estimates remaining cost as the sum of each box's distance to its nearest target.
    * @param boxes   sorted array of packed box positions
    * @param targets list of target coordinates
    * @return        estimated number of moves still needed
@@ -170,19 +176,19 @@ public class SokoBot {
   private int heuristic(long[] boxes, List<int[]> targets) {
     int total = 0;
 
-    for (long b : boxes) {
+    for (long b : boxes) { // find the closest target for each box
       int br = row(b), bc = col(b);
       int minDist = Integer.MAX_VALUE;
 
-      for (int[] t : targets) {
+      for (int[] t : targets) { // compute the distance to each target
         int d = Math.abs(br - t[0]) + Math.abs(bc - t[1]);
 
-        if (d < minDist)
+        if (d < minDist) // update if the target is closer
           minDist = d;
       }
-      total += minDist;
+      total += minDist; // add the closest distance to the current total
     }
-    return total;
+    return total; // return the sum of each box's closest distance to a target
   }
 
   /**
@@ -197,15 +203,20 @@ public class SokoBot {
    */
   private void computeDeadCells(boolean[][] dead, boolean[][] walls,
                                 boolean[][] targets, int height, int width) {
-    // if a box placed in a cell can be pushed to a target, it is "live"
-    // compute live cells using reverse BFS (pull boxes from targets)
+    /*
+    "Live" cell characteristics:
+      1. The bot can push a box from that cell
+      2. There exists some sequence of pushes that gets that box to a target
+    "Dead" cell example: corner cells (bot cannot push the box out anymore)
+    */
+    // compute live cells using reverse BFS
     boolean[][] live = new boolean[height][width];
     Queue<long[]> queue = new LinkedList<>();
 
-    // seed (all target cells are live)
+    // target cells are always live...
     for (int r = 0; r < height; r++)
       for (int c = 0; c < width; c++)
-        if (targets[r][c]) {
+        if (targets[r][c]) { // ...so we seed the BFS from target cells
           live[r][c] = true;
           queue.add(new long[]{r,c});
         }
@@ -221,13 +232,13 @@ public class SokoBot {
         int br = r - dr[d]; int bc = c - dc[d]; // where box was
         int pr = r + dr[d]; int pc = c + dc[d]; // where player was
 
-        if (br < 0 || br >= height || bc < 0 || bc >= width)
+        if (br < 0 || br >= height || bc < 0 || bc >= width) // skip if box origin is out of bounds
           continue;
-        if (pr < 0 || pr >= height || pc < 0 || pc >= width)
+        if (pr < 0 || pr >= height || pc < 0 || pc >= width) // skip if player position is out of bounds
           continue;
-        if (walls[br][bc] || walls[pr][pc])
+        if (walls[br][bc] || walls[pr][pc]) // skip if box-origin/player-position is a wall (push impossible)
           continue;
-        if (!live[br][bc]) {
+        if (!live[br][bc]) { // not yet visited, mark it live and explore it next
           live[br][bc] = true;
           queue.add(new long[]{br, bc});
         }
@@ -236,14 +247,14 @@ public class SokoBot {
 
     for (int r = 0; r < height; r++)
       for (int c = 0; c < width; c++)
-        if (!walls[r][c])
-          dead[r][c] = !live[r][c];
+        if (!walls[r][c]) // wall cells are never dead or live...
+          dead[r][c] = !live[r][c]; // ...so we only mark non-wall cells as dead cells
   }
 
   /**
    * isFrozenDeadlock
-   * checks whether the newly pushed box causes a 2x2 freeze deadlock.
-   * A 2x2 freeze deadlock is a 2x2 block where every cell is a wall or box, and at least one box is off a target.
+   * checks whether the newly pushed box causes a 2x2 block to freeze deadlock.
+   * A freeze deadlock is a 2x2 block where every cell is a wall or box, and at least one box is not on a target.
    * @param boxes   current sorted array of packed box positions
    * @param walls   2D boolean array marking wall cells
    * @param targets 2D boolean array marking target cells
@@ -263,7 +274,7 @@ public class SokoBot {
       int r0 = br + offR[k];
       int c0 = bc + offC[k];
 
-      if (r0 < 0 || r0+1 >= height || c0 < 0 || c0+1 >= width)
+      if (r0 < 0 || r0+1 >= height || c0 < 0 || c0+1 >= width) // skip if 2x2 block is out of bounds
         continue;
 
       // check 2x2 block (r0,c0),(r0,c0+1),(r0+1,c0),(r0+1,c0+1)
@@ -277,23 +288,26 @@ public class SokoBot {
           boolean isWall = walls[rr][cc];
           boolean isBox  = findBox(boxes, rr, cc) >= 0;
 
-          if (!isWall && !isBox) {
+          if (!isWall && !isBox) { // found an empty cell, so no need to check remaining cells (1)
             allBlocked = false;
-            break;
+            break; // break out of loop since puzzle is not frozen yet (1)
           }
-          if (isBox) {
+          // if no empty cell is found, the bot is surrounded by wall/box cells
+          if (isBox) { // found a box cell, now check if it's on a target
             hasBox = true;
-            if (!targets[rr][cc])
+            if (!targets[rr][cc]) // box is not on a target, so this block is unsolvable
               allOnTarget = false;
           }
         }
-        if (!allBlocked)
-          break;
+        if (!allBlocked) // found an empty cell, so no need to check remaining cells (2)
+          break; // break out of loop since puzzle is not frozen yet (2)
       }
+      // deadlock check: if every cell is a wall/box, and at least one box is not on a target...
       if (allBlocked && hasBox && !allOnTarget)
-        return true;
+        return true; // ...then the puzzle is deadlocked (no possible solution)
     }
-    return false;
+    // if program successfully exits the for-loop...
+    return false; // ...then the puzzle is not deadlocked (possible solution)
   }
 
   /* -0-0-0-0-0-0-0-0-0-0- HELPERS -0-0-0-0-0-0-0-0-0-0- */
