@@ -59,7 +59,7 @@ public class SokoBot {
     // sort boxes for consistent state hashing, then run A*
     Arrays.sort(boxArr);
     State initial = new State(playerR, playerC, boxArr, "");
-    String result = astar(initial, walls, targets, targetList, deadCells, height, width);
+    String result = aStar(initial, walls, targets, targetList, deadCells, height, width);
 
     if (result == null) { // no solution found...
       return ""; // ...return empty string
@@ -69,7 +69,7 @@ public class SokoBot {
   }
 
   /**
-   * astar
+   * aStar
    * runs A* search over the Sokoban state space to find an optimal sequence of moves.
    * @param initial    the starting state
    * @param walls      2D boolean array marking wall cells
@@ -80,75 +80,84 @@ public class SokoBot {
    * @param width      number of columns in the level
    * @return           solution move string, or null if no solution exists
    */
-  private String astar(State initial, boolean[][] walls, boolean[][] targets,
+  private String aStar(State initial, boolean[][] walls, boolean[][] targets,
                        List<int[]> targetList, boolean[][] deadCells, int height, int width) {
 
-    // open list: states to explore, ordered by f (lowest first)
+    int d, nr, nc, br, bc, newG;
+    long hash;
+    int boxIdx;
+    long[] newBoxes;
+    State cur;
+    Integer best;
+    // Direction Vectors (up, down, left, right)
+    int[] dr = {-1, 1, 0, 0};
+    int[] dc = {0, 0, -1, 1};
+    char[] dirChar = {'u','d','l','r'};
+    // Open list: states to explore, ordered by f (starting with the lowest)
     PriorityQueue<State> open = new PriorityQueue<>(Comparator.comparingInt(s -> s.f));
     Map<Long, Integer> visited = new HashMap<>();
 
-    // initialize the starting state and add it to the open list
+    // Initializing the starting state and add it to the open list
     initial.g = 0;
     initial.h = heuristic(initial.boxes, targetList);
     initial.f = initial.h;
     open.add(initial);
 
-    // direction vectors: up, down, left, right
-    int[] dr = {-1, 1, 0, 0};
-    int[] dc = {0, 0, -1, 1};
-    char[] dirChar = {'u','d','l','r'};
+    while (!open.isEmpty()) { // Continue exploring until no states are left
+      cur = open.poll(); // Pick the most promising state (lowest f)
 
-    while (!open.isEmpty()) { // keep exploring until no states are left
-      State cur = open.poll(); // pick the most promising state (lowest f)
-
-      // goal check: if all boxes are in target cells already...
+      // Check if all boxes are in target cells already, return the viable solution
       if (isGoal(cur.boxes, targets))
-        return cur.path; // ...return the current path as the solution
+        return cur.path;
 
-      long hash = stateHash(cur);
-      Integer best = visited.get(hash);
+      hash = stateHash(cur);
+      best = visited.get(hash);
 
-      if (best != null && best <= cur.g) // skip if already visited this state with a better or equal cost
+      if (best != null && best <= cur.g) // Skip if already visited this state with a better or equal cost
         continue;
 
       visited.put(hash, cur.g);
 
-      // expand: try all four directions
-      for (int d = 0; d < 4; d++) { // generate a neighbor state for each direction
-        int nr = cur.playerR + dr[d];
-        int nc = cur.playerC + dc[d];
+      // Try all four directions
+      for (d = 0; d < 4; d++) { // Generating a neighbor state for each direction
+        nr = cur.playerR + dr[d];
+        nc = cur.playerC + dc[d];
 
-        if (nr < 0 || nr >= height || nc < 0 || nc >= width) // skip if out of bounds
+        // Skip Conditions
+        if (nr < 0 || nr >= height || nc < 0 || nc >= width) // Out of bounds
           continue;
-        if (walls[nr][nc]) // skip if the next cell is a wall
+        if (walls[nr][nc]) // Next cell is a wall
           continue;
 
-        int boxIdx = findBox(cur.boxes, nr, nc);
-        long[] newBoxes = cur.boxes;
+        boxIdx = findBox(cur.boxes, nr, nc);
+        newBoxes = cur.boxes;
 
-        if (boxIdx >= 0) { // next cell has a box, attempt to push it
-          // push a box
-          int br = nr + dr[d];
-          int bc = nc + dc[d];
+        if (boxIdx >= 0) { // Next cell has a box, attempt to push it
 
-          if (br < 0 || br >= height || bc < 0 || bc >= width) // skip if box destination is out of bounds
+          // Pushes a box
+          br = nr + dr[d];
+          bc = nc + dc[d];
+
+          // Skip Conditions
+          if (br < 0 || br >= height || bc < 0 || bc >= width) // Destination is out of bounds
             continue;
-          if (walls[br][bc]) // skip if box destination is a wall
+          if (walls[br][bc]) // Destination is a wall
             continue;
-          if (findBox(cur.boxes, br, bc) >= 0) // skip if another box is already at the destination
+          if (findBox(cur.boxes, br, bc) >= 0) // Another box is at destination
             continue;
-          if (deadCells[br][bc] && !targets[br][bc]) // skip if box destination is a dead cell
+          if (deadCells[br][bc] && !targets[br][bc]) // Destination is a dead cell
             continue;
 
           newBoxes = cur.boxes.clone();
           newBoxes[boxIdx] = pack(br, bc);
           Arrays.sort(newBoxes);
 
-          if (isFrozenDeadlock(newBoxes, walls, targets, br, bc, height, width)) // skip if push causes a deadlock
+          // Skip if push causes a deadlock
+          if (isFrozenDeadlock(newBoxes, walls, targets, br, bc, height, width))
             continue;
         }
 
-        int newG = cur.g + 1;
+        newG = cur.g + 1;
         State next = new State(nr, nc, newBoxes, cur.path + dirChar[d]);
         next.g = newG;
         next.h = heuristic(newBoxes, targetList);
@@ -157,13 +166,14 @@ public class SokoBot {
         long nextHash = stateHash(next);
         Integer nextBest = visited.get(nextHash);
 
-        if (nextBest != null && nextBest <= newG) // skip if already found a better or equal path to this state
+        // Skip if already found a better or equal path to this state
+        if (nextBest != null && nextBest <= newG)
           continue;
 
-        open.add(next); // add neighbor to open list for future exploration
+        open.add(next); // Add neighbor to open list for future exploration
       }
     }
-    return null; // if the program exits the while-loop, there is no solution
+    return null; // If the program exits the while-loop, there is no solution; return null
   }
 
   /**
