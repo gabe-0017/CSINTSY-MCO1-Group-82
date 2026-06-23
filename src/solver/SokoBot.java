@@ -203,6 +203,7 @@ public class SokoBot {
    */
   private void computeDeadCells(boolean[][] dead, boolean[][] walls,
                                 boolean[][] targets, int height, int width) {
+
     /*
     "Live" cell characteristics:
       1. The bot can push a box from that cell
@@ -229,8 +230,10 @@ public class SokoBot {
       int r = (int)cur[0], c = (int)cur[1];
 
       for (int d = 0; d < 4; d++) {
-        int br = r - dr[d]; int bc = c - dc[d]; // where box was
-        int pr = r + dr[d]; int pc = c + dc[d]; // where player was
+        int br = r - dr[d];
+        int bc = c - dc[d]; // where box was
+        int pr = br - dr[d];
+        int pc = bc - dc[d]; // where player was
 
         if (br < 0 || br >= height || bc < 0 || bc >= width) // skip if box origin is out of bounds
           continue;
