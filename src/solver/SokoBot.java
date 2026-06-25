@@ -84,15 +84,17 @@ public class SokoBot {
                        List<int[]> targetList, boolean[][] deadCells, int height, int width) {
 
     int d, nr, nc, br, bc, newG;
-    long hash;
+    long hash, nextHash;
     int boxIdx;
     long[] newBoxes;
-    State cur;
-    Integer best;
+    State cur, next;
+    Integer best, nextBest;
+
     // Direction Vectors (up, down, left, right)
     int[] dr = {-1, 1, 0, 0};
     int[] dc = {0, 0, -1, 1};
     char[] dirChar = {'u','d','l','r'};
+
     // Open list: states to explore, ordered by f (starting with the lowest)
     PriorityQueue<State> open = new PriorityQueue<>(Comparator.comparingInt(s -> s.f));
     Map<Long, Integer> visited = new HashMap<>();
@@ -158,13 +160,12 @@ public class SokoBot {
         }
 
         newG = cur.g + 1;
-        State next = new State(nr, nc, newBoxes, cur.path + dirChar[d]);
+        next = new State(nr, nc, newBoxes, cur.path + dirChar[d]);
         next.g = newG;
         next.h = heuristic(newBoxes, targetList);
         next.f = newG + next.h;
-
-        long nextHash = stateHash(next);
-        Integer nextBest = visited.get(nextHash);
+        nextHash = stateHash(next);
+        nextBest = visited.get(nextHash);
 
         // Skip if already found a better or equal path to this state
         if (nextBest != null && nextBest <= newG)
@@ -422,8 +423,10 @@ public class SokoBot {
     int g, h, f;
 
     State(int pr, int pc, long[] boxes, String path) {
-      this.playerR = pr; this.playerC = pc;
-      this.boxes = boxes; this.path = path;
+      this.playerR = pr;
+      this.playerC = pc;
+      this.boxes = boxes;
+      this.path = path;
     }
   }
 }
